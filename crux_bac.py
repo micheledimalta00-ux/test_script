@@ -38,7 +38,12 @@ if tick % 2 == 0:  # ogni 2 tick sposta ostacoli verso sinistra
         nuova_colonna[r] = "P"
     # Shift ostacoli
     for r in range(altezza):
-        ostacoli[r] = ostacoli[r][1:] + [nuova_colonna[r]]
+        ostacoli[r] = (ostacoli[r][1:] if len(ostacoli[r])>0 else ["_"]) + [nuova_colonna[r]]
+        # Normalizza lunghezza
+        if len(ostacoli[r]) < larghezza:
+            ostacoli[r] = ["_"]*(larghezza - len(ostacoli[r])) + ostacoli[r]
+        elif len(ostacoli[r]) > larghezza:
+            ostacoli[r] = ostacoli[r][-larghezza:]
 
 # --- Collisione e raccolta parole ---
 collisione = False
