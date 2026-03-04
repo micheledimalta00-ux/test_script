@@ -9,7 +9,7 @@ import altair as alt
 
 def simulate_tfr(ral_list, tfr_percent=0.0833, tasso_rivalut=0.03):
     """Calcola TFR annuo e saldo cumulato"""
-    tfr_annuale = [r * tfr_percent for r in ral_list]  # circa 1 mensilità
+    tfr_annuale = [r * tfr_percent for r in ral_list]
     saldo = []
     acc = 0
     for tfr in tfr_annuale:
@@ -43,7 +43,6 @@ def generate_ral_list(ral_iniziale, anni, scenario):
             ral *= 1.02
         elif scenario == "Crescita rapida 4%":
             ral *= 1.04
-        # "Stabile" lascia invariata
         ral_list.append(ral)
     return ral_list
 
@@ -87,18 +86,21 @@ netto_prelievo = prelievo_anticipato(saldo_cometa, prelievo_anticipato_perc, tas
 df = pd.DataFrame({
     "Anno": np.arange(1, anni_lavoro+1),
     "Età": np.arange(eta_inizio+1, eta_pensione+1),
-    "RAL (€)": [round(r,0) for r in ral_list],
-    "Acc. TFR annuo (€)": [round(t,2) for t in tfr_annuo],
-    "Saldo TFR (€)": [round(s,2) for s in saldo_tfr],
-    "Contributo Cometa (€)": [round(c,2) for c in cometa_annuo],
-    "Saldo Cometa (€)": [round(s,2) for s in saldo_cometa],
-    "Netto prelievo (€)": [round(n,2) for n in netto_prelievo]
+    "RAL (€)": [r for r in ral_list],
+    "Acc. TFR annuo (€)": [t for t in tfr_annuo],
+    "Saldo TFR (€)": [s for s in saldo_tfr],
+    "Contributo Cometa (€)": [c for c in cometa_annuo],
+    "Saldo Cometa (€)": [s for s in saldo_cometa],
+    "Netto prelievo (€)": [n for n in netto_prelievo]
 })
 
+# Forza tutte le colonne numeriche a float
+numeric_cols = ["RAL (€)", "Acc. TFR annuo (€)", "Saldo TFR (€)",
+                "Contributo Cometa (€)", "Saldo Cometa (€)", "Netto prelievo (€)"]
+df[numeric_cols] = df[numeric_cols].astype(float)
+
 st.subheader("📊 Tabella anno per anno")
-st.dataframe(df.style.format({"RAL (€)":"{:.0f}", "Acc. TFR annuo (€)":"{:.2f}",
-                              "Saldo TFR (€)":"{:.2f}", "Contributo Cometa (€)":"{:.2f}",
-                              "Saldo Cometa (€)":"{:.2f}", "Netto prelievo (€)":"{:.2f}"}))
+st.dataframe(df.style.format("{:,.2f}"))
 
 # --- Grafico comparativo ---
 st.subheader("📈 Andamento TFR vs Fondo Cometa")
@@ -106,26 +108,26 @@ chart = alt.Chart(df).transform_fold(
     ["Saldo TFR (€)", "Saldo Cometa (€)"],
     as_ = ['Tipo', 'Saldo']
 ).mark_line().encode(
-    x='Età',
-    y='Saldo',
-    color='Tipo',
-    tooltip=['Età', 'Saldo']
+    x=alt.X('Età:Q', title='Età'),
+    y=alt.Y('Saldo:Q', title='Saldo (€)'),
+    color=alt.Color('Tipo:N', title='Tipo'),
+    tooltip=[alt.Tooltip('Età:Q'), alt.Tooltip('Saldo:Q', format=",.2f")]
 )
 st.altair_chart(chart, use_container_width=True)
 
 st.subheader("💸 Netto prelievo anticipato dal Fondo Cometa")
 chart2 = alt.Chart(df).mark_line(color='red').encode(
-    x='Età',
-    y='Netto prelievo (€)',
-    tooltip=['Età', 'Netto prelievo (€)']
+    x=alt.X('Età:Q', title='Età'),
+    y=alt.Y('Netto prelievo (€):Q', title='Netto prelievo (€)'),
+    tooltip=[alt.Tooltip('Età:Q'), alt.Tooltip('Netto prelievo (€):Q', format=",.2f")]
 )
 st.altair_chart(chart2, use_container_width=True)
 
 # --- Metriche finali ---
 st.subheader("📌 Metriche finali a pensionamento")
-st.markdown(f"- **Saldo TFR finale (€)**: {round(saldo_tfr[-1],2)}")
-st.markdown(f"- **Saldo Cometa finale (€)**: {round(saldo_cometa[-1],2)}")
-st.markdown(f"- **Netto prelievo massimo (%)**: {prelievo_anticipato_perc*100}% → {round(netto_prelievo[-1],2)} €")
-st.markdown(f"- **Totale contributi personali (€)**: {round(sum(cometa_annuo),2)}")
-st.markdown(f"- **Rendimento complessivo Fondo Cometa**: {round((saldo_cometa[-1] - sum(cometa_annuo))/sum(cometa_annuo)*100,2)}%")
-st.markdown(f"- **Rendimento complessivo TFR**: {round((saldo_tfr[-1] - sum(tfr_annuo))/sum(tfr_annuo)*100,2)}%")
+st.markdown(f"- **Saldo TFR finale (€)**: {df['Saldo TFR (€)'].iloc[-1]:,.2f}")
+st.markdown(f"- **Saldo Cometa finale (€)**: {df['Saldo Cometa (€)'].iloc[-1]:,.2f}")
+st.markdown(f"- **Netto prelievo massimo (%)**: {prelievo_anticipato_perc*100:.0f}% → {df['Netto prelievo (€)'].iloc[-1]:,.2f} €")
+st.markdown(f"- **Totale contributi personali (€)**: {df['Contributo Cometa (€)'].sum():,.2f}")
+st.markdown(f"- **Rendimento complessivo Fondo Cometa**: {((df['Saldo Cometa (€)'].iloc[-1] - df['Contributo Cometa (€)'].sum())/df['Contributo Cometa (€)'].sum()*100):.2f}%")
+st.markdown(f"- **Rendimento complessivo TFR**: {((df['Saldo TFR (€)'].iloc[-1] - df['Acc. TFR annuo (€)'].sum())/df['Acc. TFR annuo (€)'].sum()*100):.2f}%")
