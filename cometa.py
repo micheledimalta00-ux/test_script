@@ -1,4 +1,4 @@
-# simulatore_cometa.py
+# simulatore_cometa_dettagliato.py
 
 import streamlit as st
 import pandas as pd
@@ -6,156 +6,188 @@ import numpy as np
 import altair as alt
 
 # ==============================
-# FUNZIONI CALCOLO FINANZIARIO
+# FUNZIONI FINANZIARIE
 # ==============================
-
-def annual_mutuo_schedule(principal, rates, contributions, years, tax_rate):
-    """Calcola anno per anno saldo fondo con rendimento netto."""
-    balances = []
-    saved = 0
-    for i in range(years):
+def annual_fondo_schedule(ral_list, contrib_lav_perc, contrib_az_perc, rates, tax_return, tax_exit, prelievo_anticipato=False):
+    balances_lordo, balances_netto = [], []
+    contrib_lav_lordo_list, contrib_az_lordo_list = [], []
+    contrib_lav_netto_list, contrib_az_netto_list = [], []
+    saldo = 0
+    for i in range(len(ral_list)):
+        ral = ral_list[i]
+        # contributi annui lordi
+        c_lav = ral * contrib_lav_perc / 100
+        c_az = ral * contrib_az_perc / 100
+        contrib_lav_lordo_list.append(c_lav)
+        contrib_az_lordo_list.append(c_az)
+        
+        # aggiungiamo al saldo
+        saldo += c_lav + c_az
+        
+        # rendimento lordo
         r = rates[i]
-        # contributo anno i
-        saved += contributions[i]
-        # rendimento lordo su saldo
-        gross_return = saved * r
-        # tassazione sui rendimenti
-        net_return = gross_return * (1 - tax_rate)
-        saved += net_return
-        balances.append(saved)
-    return balances
+        rend_lordo = saldo * r
+        
+        # tasse annuali sul rendimento
+        rend_netto = rend_lordo * (1 - tax_return)
+        saldo_netto = saldo + rend_netto
+        
+        # se prelievo anticipato, applica tassa in uscita sul saldo netto
+        if prelievo_anticipato:
+            saldo_netto *= (1 - tax_exit)
+        
+        # registriamo saldo
+        balances_lordo.append(saldo + rend_lordo)
+        balances_netto.append(saldo_netto)
+        
+        # contributi netti
+        contrib_lav_netto_list.append(c_lav)
+        contrib_az_netto_list.append(c_az)
+        
+        saldo = saldo_netto  # saldo netto per anno successivo
+    
+    return {
+        "Saldo Lordo": balances_lordo,
+        "Saldo Netto": balances_netto,
+        "Contrib Lavoratore Lordo": contrib_lav_lordo_list,
+        "Contrib Azienda Lordo": contrib_az_lordo_list,
+        "Contrib Lavoratore Netto": contrib_lav_netto_list,
+        "Contrib Azienda Netto": contrib_az_netto_list,
+    }
 
-def annual_tfr_schedule(initial_tfr, inflations, years):
-    """Calcolo TFR anno per anno secondo rivalutazione normativa."""
-    balances = []
-    tfr = initial_tfr
-    for i in range(years):
-        # rivalutazione = 1,5% + 75% inflazione
-        tfr = tfr * (1 + 0.015 + 0.75 * inflations[i])
-        balances.append(tfr)
-    return balances
+def annual_tfr_schedule(ral_list, inflations, tax_exit, prelievo_anticipato=False):
+    balances_lordo, balances_netto = [], []
+    contrib_list = []
+    tfr = 0
+    for i in range(len(ral_list)):
+        ral = ral_list[i]
+        c = ral * 0.076  # quota TFR annua
+        contrib_list.append(c)
+        tfr += c
+        tfr_lordo = tfr * (1 + 0.015 + 0.75 * inflations[i])
+        tfr_netto = tfr_lordo * (1 - tax_exit) if prelievo_anticipato else tfr_lordo
+        balances_lordo.append(tfr_lordo)
+        balances_netto.append(tfr_netto)
+    return balances_lordo, balances_netto, contrib_list
 
 # ==============================
-# DATI PREDEFINITI SCENARI
+# SCENARI COMPARTO
 # ==============================
-
 COMPARTI = {
     "Monetario Plus (~3% medio)": 0.031,
     "Reddito (~5.5% medio)": 0.055,
     "Crescita (~10.4% medio)": 0.104,
 }
 
-TAX_RENDIMENTO = 0.20  # percentuale tassa sui rendimenti del fondo
-TAX_USCITA_BASE = 0.15  # aliquota base in uscita dalla pensione
+TAX_RETURN = 0.20
+TAX_EXIT = 0.15  # aliquota uscita fondi/pensioni
 
 # ==============================
 # STREAMLIT APP
 # ==============================
-
-st.set_page_config(page_title="Simulatore Fondo Cometa vs TFR", layout="wide")
-st.title("Simulatore Fondo Pensione Cometa vs TFR Aziendale")
+st.set_page_config(page_title="Simulatore Fondo Cometa vs TFR Dettagliato", layout="wide")
+st.title("Simulatore Fondo Cometa vs TFR Aziendale - Dettagliato")
 
 # ------------------------------
-# INPUT IN SIDEBAR
+# INPUT
 # ------------------------------
 with st.sidebar:
-
-    st.header("Parametri Personali")
-
-    eta = st.number_input("Età attuale", min_value=18, max_value=70, value=26)
-    pensione = st.number_input("Età pensione prevista", min_value=18, max_value=70, value=70)
-
-    ral = st.number_input("RAL annua (€)", value=30000)
-    contrib_lav = st.slider("Contributo lavoratore (% RAL)", 0.0, 10.0, 1.2)
-    contrib_azienda = st.slider("Contributo azienda (% RAL)", 0.0, 10.0, 2.0)
-
-    comparto = st.selectbox("Comparto del Fondo Cometa", list(COMPARTI.keys()))
-
-    st.markdown("---")
-
-    st.header("Parametri Economici")
-    inflazione_media = st.slider("Inflazione media attesa (%)", 0.0, 10.0, 2.0) / 100
+    st.header("Dati Personali")
+    eta = st.number_input("Età attuale", 18, 70, 26)
+    pensione = st.number_input("Età pensione prevista", 18, 70, 70)
+    
+    st.header("RAL / Contributi")
+    ral_base = st.number_input("RAL base (€)", value=30000)
+    anni_lavoro = pensione - eta
+    st.markdown(f"Simulazione su {anni_lavoro} anni")
+    
+    contrib_lav_perc = st.slider("Contributo lavoratore (%)", 0.0, 10.0, 1.2)
+    contrib_az_perc = st.slider("Contributo azienda (%)", 0.0, 10.0, 2.0)
+    
+    st.header("Comparto Fondo")
+    comparto = st.selectbox("Scelta comparto", list(COMPARTI.keys()))
+    
+    st.header("Inflazione / Tassazione")
+    inflazione_media = st.slider("Inflazione media (%)", 0.0, 10.0, 2.0) / 100
+    tax_return = st.slider("Tassazione rendimento (%)", 0, 50, 20) / 100
+    tax_exit = st.slider("Tassazione prelievo (%)", 0, 50, 15) / 100
+    
+    st.header("RAL anno per anno (opzionale)")
+    st.markdown("Se vuoi simulare aumenti RAL diversi ogni anno, inserisci una lista separata da virgola")
+    ral_input = st.text_input("RAL per anno", value=",".join([str(ral_base)] * anni_lavoro))
+    
+    prelievo_anticipato = st.checkbox("Considera prelievo anticipato con tassazione", value=False)
 
 # ------------------------------
-# SETUP ANNI
+# PREPARAZIONE DATI
 # ------------------------------
-anni_lavoro = pensione - eta
-years = anni_lavoro if anni_lavoro > 0 else 0
+try:
+    ral_list = [float(x) for x in ral_input.split(",")]
+    if len(ral_list) != anni_lavoro:
+        ral_list = [ral_base]*anni_lavoro
+except:
+    ral_list = [ral_base]*anni_lavoro
 
-# generazione tassi annuali dello scenario
-base_return = COMPARTI[comparto]
-rates_fondo = [base_return] * years
+rates_fondo = [COMPARTI[comparto]] * anni_lavoro
+inflations = [inflazione_media] * anni_lavoro
 
-# inflazione costante
-inflations = [inflazione_media] * years
-
-# contributi anno per anno
-contrib_annuali = [(ral * (contrib_lav + contrib_azienda) / 100) for _ in range(years)]
-
-# ==============================
-# CALCOLO ANNO PER ANNO
-# ==============================
-fondo_balances = annual_mutuo_schedule(
-    principal=0,
-    rates=rates_fondo,
-    contributions=contrib_annuali,
-    years=years,
-    tax_rate=TAX_RENDIMENTO
+# ------------------------------
+# CALCOLI
+# ------------------------------
+fondo = annual_fondo_schedule(
+    ral_list,
+    contrib_lav_perc,
+    contrib_az_perc,
+    rates_fondo,
+    tax_return,
+    tax_exit,
+    prelievo_anticipato
 )
 
-# TFR
-initial_tfr = ral * 0.076  # quota TFR maturata stimata
-tfr_balances = annual_tfr_schedule(initial_tfr, inflations, years)
+tfr_lordo, tfr_netto, tfr_contrib = annual_tfr_schedule(
+    ral_list, inflations, tax_exit, prelievo_anticipato
+)
 
-# ==============================
-# PREPARAZIONE DATI TABELLA
-# ==============================
-
+# ------------------------------
+# TABELLA DETTAGLIATA
+# ------------------------------
 df = pd.DataFrame({
-    "Anno": np.arange(1, years + 1),
-    "Saldo Fondo Cometa (€)": fondo_balances,
-    "Saldo TFR (€)": tfr_balances,
-    "Rendimento Netto Fondo (%)": [base_return * 100] * years,
-    "Contributi Versati (€)": contrib_annuali,
+    "Anno": np.arange(1, anni_lavoro + 1),
+    "RAL (€)": ral_list,
+    "Saldo Fondo Lordo (€)": fondo["Saldo Lordo"],
+    "Saldo Fondo Netto (€)": fondo["Saldo Netto"],
+    "Contrib Lavoratore Lordo (€)": fondo["Contrib Lavoratore Lordo"],
+    "Contrib Azienda Lordo (€)": fondo["Contrib Azienda Lordo"],
+    "Contrib Lavoratore Netto (€)": fondo["Contrib Lavoratore Netto"],
+    "Contrib Azienda Netto (€)": fondo["Contrib Azienda Netto"],
+    "Saldo TFR Lordo (€)": tfr_lordo,
+    "Saldo TFR Netto (€)": tfr_netto,
+    "Contributo TFR (€)": tfr_contrib,
 })
 
 st.subheader("Tabella Valori Anno per Anno")
 st.dataframe(df)
 
-# ==============================
-# CALCOLO METRICHE
-# ==============================
-
-# metriche per grafici
-saldo_cometa = np.array(fondo_balances)
-saldo_tfr = np.array(tfr_balances)
-diff_balances = saldo_cometa - saldo_tfr
-
-metrics = {
-    "Saldo Fondo Cometa": saldo_cometa,
-    "Saldo TFR Aziendale": saldo_tfr,
-    "Differenza Cometa vs TFR": diff_balances,
-    "Contributi Totali Accumulati": np.cumsum(contrib_annuali),
-    "Rendimento Netto (% annuo)": [base_return * 100] * years,
-    "Guadagno Net vs TFR (€)": diff_balances,
-}
-
-# ==============================
-# GRAFICI
-# ==============================
-
+# ------------------------------
+# GRAFICI COMPARATIVI
+# ------------------------------
 st.subheader("Grafici Comparativi")
+metriche_grafici = [
+    ("Saldo Fondo Lordo (€)", "Saldo Fondo Lordo (€)"),
+    ("Saldo Fondo Netto (€)", "Saldo Fondo Netto (€)"),
+    ("Saldo TFR Lordo (€)", "Saldo TFR Lordo (€)"),
+    ("Saldo TFR Netto (€)", "Saldo TFR Netto (€)"),
+    ("Differenza Cometa vs TFR (€)", "Saldo Fondo Netto (€) - Saldo TFR Netto (€)"),
+    ("Contributi Totali Fondo (€)", "Contrib Lavoratore Netto (€) + Contrib Azienda Netto (€)"),
+]
 
-for title, values in metrics.items():
-    chart_data = pd.DataFrame({
-        "Anno": np.arange(1, years + 1),
-        title: values
-    })
-    chart = alt.Chart(chart_data).mark_line(point=True).encode(
+df["Differenza Cometa vs TFR (€)"] = np.array(fondo["Saldo Netto"]) - np.array(tfr_netto)
+df["Contributi Totali Fondo (€)"] = np.array(fondo["Contrib Lavoratore Netto"]) + np.array(fondo["Contrib Azienda Netto"])
+
+for title, col in metriche_grafici:
+    chart = alt.Chart(df).mark_line(point=True).encode(
         x="Anno",
-        y=title,
-        tooltip=["Anno", title]
-    ).properties(
-        title=title
-    )
+        y=col,
+        tooltip=["Anno", col]
+    ).properties(title=title)
     st.altair_chart(chart, use_container_width=True)
