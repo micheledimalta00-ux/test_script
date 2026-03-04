@@ -64,6 +64,10 @@ if "raggio" in gioco["parametri"]:
 
 # --- Simulazione semplificata ---
 t = np.linspace(0, 10, 300)
+# inizializzo sempre y e rollio
+y = np.zeros_like(t)
+rollio = np.zeros_like(t)
+
 if scelta_gioco == "Accelerazione":
     accel = param.get("mu",0.9)*9.81
     v = accel*t
@@ -88,6 +92,7 @@ elif scelta_gioco == "Frenata":
     x = np.linspace(0,d_stop,len(t))
     y = np.zeros_like(t)
     v = np.linspace(param.get("v0",20),0,len(t))
+    rollio = np.zeros_like(t)
     successo = d_stop<=25
 elif scelta_gioco == "Endurance":
     x = t
@@ -96,9 +101,13 @@ elif scelta_gioco == "Endurance":
     v = np.full_like(t,param.get("v0",20))
     successo = rollio.max()<1.0
 
-df = pd.DataFrame({"x": x, "y": y, "Velocità (m/s)": v})
-if "rollio" in locals():
-    df["Rollio (°)"] = rollio
+# --- DataFrame con tutte le colonne ---
+df = pd.DataFrame({
+    "x": x,
+    "y": y,
+    "Velocità (m/s)": v,
+    "Rollio (°)": rollio
+})
 
 # --- Grafico Altair ---
 chart = alt.Chart(df).mark_line(point=True, color="#1f77b4").encode(
@@ -120,7 +129,7 @@ else:
 # --- Griglia cruciverba 10x10 ---
 st.markdown("### 🧩 Cruciverba")
 grid = [["" for _ in range(10)] for _ in range(10)]
-# Posizioni parole (semplice esempio)
+# Posizioni parole (esempio semplice)
 posizioni = {
     "Accelerazione": (0,0,"H"),
     "Slalom": (2,0,"H"),
