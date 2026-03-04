@@ -3,94 +3,98 @@ import pandas as pd
 import numpy as np
 import altair as alt
 
-st.set_page_config(page_title="Simulatore + Cruciverba 🎓", layout="wide")
-st.title("Simulatore di Dinamica Veicolo & Cruciverba 🏎️🧩")
-st.markdown("Modifica i parametri dei veicoli, risolvi i problemi e completa il cruciverba per scoprire la parola finale!")
+st.set_page_config(page_title="Formula SAE Cruciverba 🎓", layout="wide")
+st.title("Simulatore Formula SAE & Cruciverba 🏎️🧩")
+st.markdown("Completa le simulazioni, sblocca le parole e scopri la parola finale!")
 
-# --- Problemi e parole soluzione ---
-problemi = {
-    "Slalom": {
-        "descrizione": "Completa il percorso a slalom con rollio minimo.",
-        "parametri": ["m", "sosp", "mu", "v0"],
-        "indizio": "AUTO",
-    },
+# --- Definizione mini-giochi e parole soluzione ---
+giochi = {
     "Accelerazione": {
-        "descrizione": "Raggiungi la velocità target ottimizzando attrito e sospensioni.",
-        "parametri": ["m", "mu", "v0"],
-        "indizio": "SOSP",
+        "descrizione": "Raggiungi velocità target evitando slittamento.",
+        "parametri": ["m","mu","v0"],
+        "indovinello": "Quale parte del veicolo contribuisce alla potenza al suolo durante l’accelerazione?",
+        "soluzione": "MOTORE"
+    },
+    "Slalom": {
+        "descrizione": "Percorri il percorso a slalom con rollio minimo.",
+        "parametri": ["m","sosp","mu","v0"],
+        "indovinello": "Il veicolo a quattro ruote che stai guidando",
+        "soluzione": "AUTO"
     },
     "Curva90": {
-        "descrizione": "Curva a 90°: minimizza rollio e slittamento.",
-        "parametri": ["m", "sosp", "mu", "v0", "raggio"],
-        "indizio": "SION",
+        "descrizione": "Curva stretta: minimizza rollio e slittamento.",
+        "parametri": ["m","sosp","mu","v0","raggio"],
+        "indovinello": "Nome della parte che permette di piegare senza cadere",
+        "soluzione": "SION"
     },
     "Frenata": {
-        "descrizione": "Frenata d’emergenza: arresto entro distanza minima senza slittare.",
-        "parametri": ["m", "mu", "v0"],
-        "indizio": "FOR",
+        "descrizione": "Frenata d’emergenza senza bloccare le ruote.",
+        "parametri": ["m","mu","v0"],
+        "indovinello": "Sistema che evita il bloccaggio ruote",
+        "soluzione": "ABS"
     },
-    "Stabilita": {
-        "descrizione": "Stabilità post-collisione: minimizza oscillazioni post-impatto.",
-        "parametri": ["m", "sosp", "v0"],
-        "indizio": "SO",
+    "Endurance": {
+        "descrizione": "Mantieni stabilità e velocità ottimale in percorso combinato.",
+        "parametri": ["m","sosp","v0"],
+        "indovinello": "Valore che indica quanto l’auto mantiene la traiettoria laterale",
+        "soluzione": "LATERALE"
     }
 }
 
-# --- Selezione problema ---
-st.sidebar.header("Seleziona problema")
-scelta_problema = st.sidebar.selectbox("Problema", list(problemi.keys()))
-prob = problemi[scelta_problema]
-st.header(f"Problema: {scelta_problema}")
-st.write(prob["descrizione"])
+# --- Selezione gioco ---
+st.sidebar.header("Seleziona la prova")
+scelta_gioco = st.sidebar.selectbox("Prova", list(giochi.keys()))
+gioco = giochi[scelta_gioco]
+st.header(f"Prova: {scelta_gioco}")
+st.write(gioco["descrizione"])
+st.info(f"Indovinello: {gioco['indovinello']}")
 
-# --- Slider parametri ---
-parametri = {}
-if "m" in prob["parametri"]:
-    parametri["m"] = st.slider("Massa (kg)", 800, 2000, 1200)
-if "sosp" in prob["parametri"]:
-    parametri["sosp"] = st.slider("Rigidità sospensioni (N/m)", 20000, 50000, 30000)
-if "mu" in prob["parametri"]:
-    parametri["mu"] = st.slider("Attrito gomme", 0.6, 1.2, 0.9)
-if "v0" in prob["parametri"]:
-    parametri["v0"] = st.slider("Velocità iniziale (m/s)", 5, 50, 20)
-if "raggio" in prob["parametri"]:
-    parametri["raggio"] = st.slider("Raggio curva (m)", 5, 50, 15)
+# --- Parametri gioco ---
+param = {}
+if "m" in gioco["parametri"]:
+    param["m"] = st.slider("Massa (kg)", 800, 2000, 1200)
+if "sosp" in gioco["parametri"]:
+    param["sosp"] = st.slider("Rigidità sospensioni (N/m)", 20000, 50000, 30000)
+if "mu" in gioco["parametri"]:
+    param["mu"] = st.slider("Attrito gomme", 0.6, 1.2, 0.9)
+if "v0" in gioco["parametri"]:
+    param["v0"] = st.slider("Velocità iniziale (m/s)", 5, 50, 20)
+if "raggio" in gioco["parametri"]:
+    param["raggio"] = st.slider("Raggio curva (m)", 5, 50, 15)
 
-# --- Simulazioni semplificate ---
+# --- Simulazione semplificata ---
 t = np.linspace(0, 10, 300)
-if scelta_problema == "Slalom":
+if scelta_gioco == "Accelerazione":
+    accel = param.get("mu",0.9)*9.81
+    v = accel*t
+    x = 0.5*accel*t**2
+    successo = v[-1]>=30
+elif scelta_gioco == "Slalom":
     x = np.sin(t*2)*5
     y = t
-    rollio = np.sin(t*2)*2*(50000/parametri.get("sosp",30000))
-    v = np.full_like(t, parametri.get("v0",20))
-    soglia_rollio = 1.5
-    successo = rollio.max() < soglia_rollio
-elif scelta_problema == "Accelerazione":
-    x = t * parametri.get("v0",20)
+    rollio = np.sin(t*2)*2*(50000/param.get("sosp",30000))
+    v = np.full_like(t,param.get("v0",20))
+    successo = rollio.max()<1.5
+elif scelta_gioco == "Curva90":
+    r = param.get("raggio",15)
+    v0 = param.get("v0",20)
+    x = r*np.cos(v0*t/r)
+    y = r*np.sin(v0*t/r)
+    rollio = np.sin(t*2)*(50000/param.get("sosp",30000))
+    v = np.full_like(t,v0)
+    successo = rollio.max()<2.0
+elif scelta_gioco == "Frenata":
+    d_stop = (param.get("v0",20)**2)/(2*param.get("mu",0.9)*9.81)
+    x = np.linspace(0,d_stop,len(t))
     y = np.zeros_like(t)
-    accelerazione = (parametri.get("mu",0.9)*9.81)
-    v = accelerazione*t
-    successo = v[-1] >= 30
-elif scelta_problema == "Curva90":
-    r = parametri.get("raggio",15)
-    v0 = parametri.get("v0",20)
-    x = r * np.cos(v0*t/r)
-    y = r * np.sin(v0*t/r)
-    rollio = np.sin(t*2)*(50000/parametri.get("sosp",30000))
-    v = np.full_like(t, v0)
-    successo = rollio.max() < 2.0
-elif scelta_problema == "Frenata":
-    d_stop = (parametri.get("v0",20)**2)/(2*parametri.get("mu",0.9)*9.81)
-    x = np.linspace(0, d_stop, len(t))
-    y = np.zeros_like(t)
-    v = np.linspace(parametri.get("v0",20),0,len(t))
-    successo = d_stop <= 25
-elif scelta_problema == "Stabilita":
+    v = np.linspace(param.get("v0",20),0,len(t))
+    successo = d_stop<=25
+elif scelta_gioco == "Endurance":
     x = t
-    y = np.sin(t*2)*(50000/parametri.get("sosp",30000))
+    y = np.sin(t*2)*(50000/param.get("sosp",30000))
     rollio = y
-    v = np.full_like(t, parametri.get("v0",20))
-    successo = rollio.max() < 1.0
+    v = np.full_like(t,param.get("v0",20))
+    successo = rollio.max()<1.0
 
 df = pd.DataFrame({"x": x, "y": y, "Velocità (m/s)": v})
 if "rollio" in locals():
@@ -103,46 +107,43 @@ chart = alt.Chart(df).mark_line(point=True, color="#1f77b4").encode(
 ).properties(title="Simulazione")
 st.altair_chart(chart, use_container_width=True)
 
-# --- Controllo soglia e indizio ---
-if successo:
-    st.success(f"Bravo! Hai completato il problema. Parola sbloccata: {prob['indizio']}")
-else:
-    st.warning("Parametri non ottimali. Modifica e riprova.")
-
-# --- Memorizzazione parole ottenute ---
+# --- Controllo soglia e memorizzazione parola soluzione ---
 if "parole" not in st.session_state:
     st.session_state.parole = {}
-st.session_state.parole[scelta_problema] = prob["indizio"] if successo else ""
+st.session_state.parole[scelta_gioco] = gioco["soluzione"] if successo else ""
 
-# --- Visualizzazione cruciverba ---
+if successo:
+    st.success(f"Complimenti! Hai completato la prova. Parola sbloccata: {gioco['soluzione']}")
+else:
+    st.warning("Prova non completata. Modifica i parametri e riprova.")
+
+# --- Griglia cruciverba 10x10 ---
 st.markdown("### 🧩 Cruciverba")
-# Griglia: 10x10
 grid = [["" for _ in range(10)] for _ in range(10)]
-# Posizionamento parole (esempio semplice, verticale/orizzontale)
+# Posizioni parole (semplice esempio)
 posizioni = {
-    "Slalom": (0,0,"H"), 
-    "Accelerazione": (2,0,"H"), 
+    "Accelerazione": (0,0,"H"),
+    "Slalom": (2,0,"H"),
     "Curva90": (4,0,"H"),
     "Frenata": (6,0,"H"),
-    "Stabilita": (8,0,"H")
+    "Endurance": (8,0,"H")
 }
+
 for key, val in posizioni.items():
     parola = st.session_state.parole.get(key,"")
-    r, c, orient = val
-    for i, lettera in enumerate(parola):
+    r,c,orient = val
+    for i,l in enumerate(parola):
         if orient=="H" and c+i<10:
-            grid[r][c+i] = lettera
+            grid[r][c+i] = l
         elif orient=="V" and r+i<10:
-            grid[r+i][c] = lettera
+            grid[r+i][c] = l
 
-# Stampa griglia
+# Visualizzazione griglia
 for r in grid:
     st.write(" ".join([l if l!="" else "_" for l in r]))
 
 # --- Controllo parola finale POSTOFISSO ---
-# Lettere che compongono POSTOFISSO: posizionate verticalmente su colonne 0 e 1 ad esempio
-parola_finale = "POSTOFISSO"
-finale_rivelata = all([st.session_state.parole.get(k,"") != "" for k in problemi.keys()])
+finale_rivelata = all([st.session_state.parole.get(k,"") != "" for k in giochi.keys()])
 if finale_rivelata:
     st.balloons()
-    st.success(f"🎉 Complimenti! Hai completato tutte le parole. La parola finale è: {parola_finale}")
+    st.success("🎉 Complimenti! Hai completato tutte le prove. La parola finale è: POSTOFISSO")
