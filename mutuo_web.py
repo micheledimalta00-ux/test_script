@@ -1,148 +1,161 @@
 import streamlit as st
-import pandas as pd
 import numpy as np
+import pandas as pd
+import altair as alt
 
 # ==============================
 # FUNZIONI FINANZIARIE
 # ==============================
-
 def mortgage_payment(principal, annual_rate, years):
-    """Calcola rata mensile mutuo"""
     r = annual_rate / 12
     n = years * 12
     if r == 0:
         return principal / n
     return principal * r / (1 - (1 + r) ** -n)
 
-def annual_mutuo_schedule(principal, rates, years, annual_savings, annual_returns):
-    """Calcola anno per anno risparmi, capitale residuo e pagamenti"""
-    remaining_capital = []
-    saved_total = []
-    total_payment = []
-    total_savings = 0
+def total_cost(principal, annual_rate, years):
+    return mortgage_payment(principal, annual_rate, years) * years * 12
 
-    for i in range(years):
-        # Risparmi accumulati
-        total_savings *= (1 + annual_returns[i])
-        total_savings += annual_savings[i]
-        saved_total.append(total_savings)
-
-        # Riduzione capitale residuo
-        current_principal = max(principal - total_savings, 0)
-        remaining_capital.append(current_principal)
-
-        # Pagamento annuo mutuo
-        annual_rate = rates[i]
-        pay = mortgage_payment(current_principal, annual_rate, 1) * 12
-        total_payment.append(pay)
-
-    return saved_total, remaining_capital, total_payment
+def savings_accumulated(yearly_savings, rate):
+    total = 0
+    for s in yearly_savings:
+        total *= (1 + rate)
+        total += s
+    return total
 
 # ==============================
-# STREAMLIT APP
+# SCENARI
 # ==============================
+def generate_rates(start, min_r, max_r, years, mode):
+    rates = []
+    for i in range(years + 1):
+        t = i / years if years > 0 else 0
+        if mode == "Lineare Crescente":
+            val = start + (max_r - start) * t
+        elif mode == "Lineare Decrescente":
+            val = start - (start - min_r) * t
+        elif mode == "Non Lineare Crescente":
+            val = start + (max_r - start) * (t ** 2)
+        elif mode == "Non Lineare Decrescente":
+            val = start - (start - min_r) * (t ** 2)
+        elif mode == "Crisi Economica":
+            val = start + 0.02 * t if i < years / 2 else max(start - 0.015 * (t - 0.5), min_r)
+        else:
+            val = start + np.random.normal(0, 0.003)
+        val = np.clip(val, min_r, max_r)
+        rates.append(val)
+    return rates
 
-st.title("Simulatore Decisione Mutuo - Anno per Anno")
+def generate_savings(start, growth, years, mode, min_s, max_s):
+    savings = []
+    for i in range(years + 1):
+        if mode == "Costante":
+            val = start
+        elif mode == "Crescente":
+            val = start * ((1 + growth) ** i)
+        elif mode == "Decrescente":
+            val = start * ((1 - growth) ** i)
+        elif mode == "Stress Economico":
+            val = start if i < years / 2 else start * 0.6
+        else:  # Irregolare
+            val = start + np.random.normal(0, start * 0.15)
+        val = np.clip(val, min_s, max_s)
+        savings.append(val)
+    return savings
+
+# ==============================
+# APP STREAMLIT
+# ==============================
+st.set_page_config(page_title="Simulatore Mutuo Evoluto", layout="wide")
+st.title("Simulatore Mutuo Evoluto")
 
 # ------------------------------
-# Input principali
+# INPUT PARAMETRI
 # ------------------------------
-st.sidebar.header("Parametri Generali")
-principal = st.sidebar.number_input("Importo Mutuo (€)", 10000, 1000000, 250000, step=5000)
-duration = st.sidebar.number_input("Durata Mutuo (anni)", 1, 50, 20)
-wait_max = st.sidebar.number_input("Anni Attesa Max", 0, 10, 5)
-st.sidebar.markdown("### Tipo di variazione tassi e risparmi")
-variation_type = st.sidebar.selectbox("Tipo variazione", 
-                                      ["Lineare Crescente", "Lineare Decrescente", "Irregolare/Crisi"])
+col1, col2 = st.columns(2)
+
+with col1:
+    P = st.number_input("Importo Mutuo (€)", value=250000)
+    years = st.number_input("Durata Mutuo (anni)", value=20, min_value=1)
+    wait_max = st.number_input("Anni Attesa Max", value=5, min_value=0)
+    
+    rate_start = st.number_input("Tasso Iniziale", value=0.03, format="%.4f")
+    rate_min = st.number_input("Tasso Min", value=0.02, format="%.4f")
+    rate_max = st.number_input("Tasso Max", value=0.05, format="%.4f")
+    rate_mode = st.selectbox("Scenario Tassi", [
+        "Lineare Crescente",
+        "Lineare Decrescente",
+        "Non Lineare Crescente",
+        "Non Lineare Decrescente",
+        "Irregolare",
+        "Crisi Economica"
+    ])
+
+    save_start = st.number_input("Risparmio Iniziale", value=10000)
+    save_growth = st.number_input("Crescita Risparmio %", value=0.03)
+    save_min = st.number_input("Risparmio Min", value=5000)
+    save_max = st.number_input("Risparmio Max", value=20000)
+    save_mode = st.selectbox("Scenario Risparmi", [
+        "Costante",
+        "Crescente",
+        "Decrescente",
+        "Irregolare",
+        "Stress Economico"
+    ])
 
 # ------------------------------
-# Generazione tassi e risparmi per anno
+# GENERAZIONE TABELLA
 # ------------------------------
-st.sidebar.markdown("### Tassi e Risparmi Anno per Anno")
+rates = generate_rates(rate_start, rate_min, rate_max, wait_max, rate_mode)
+savings = generate_savings(save_start, save_growth, wait_max, save_mode, save_min, save_max)
 
-def generate_values(start, end, years, kind="linear"):
-    if kind=="linear":
-        return np.linspace(start, end, years).tolist()
-    elif kind=="decreasing":
-        return np.linspace(end, start, years).tolist()
-    else:
-        # Irregolare/Crisi: random con trend
-        arr = np.linspace(start, end, years)
-        noise = np.random.uniform(-0.005, 0.005, years)
-        return (arr + noise).tolist()
-
-rates = generate_values(0.02, 0.05, duration, 
-                        "linear" if variation_type=="Lineare Crescente" else 
-                        "decreasing" if variation_type=="Lineare Decrescente" else "irregular")
-
-savings = generate_values(5000, 15000, duration, 
-                        "linear" if variation_type=="Lineare Crescente" else 
-                        "decreasing" if variation_type=="Lineare Decrescente" else "irregular")
-
-returns = [0.02]*duration  # rendimento risparmi fisso per semplicità
-
-# Tabella input (bloccata)
-df_input = pd.DataFrame({
-    "Anno": np.arange(1,duration+1),
-    "Tasso (%)": np.array(rates)*100,
-    "Risparmio (€)": np.array(savings)
+table = pd.DataFrame({
+    "Anno": np.arange(wait_max + 1),
+    "Tasso": rates,
+    "Risparmio": savings
 })
-st.sidebar.dataframe(df_input)
+
+with col2:
+    st.write("### Tassi e Risparmi per Anno")
+    st.dataframe(table, use_container_width=True)
 
 # ------------------------------
-# Calcolo anno per anno
+# CALCOLO METRICHE
 # ------------------------------
-saved_total, remaining_capital, total_payment = annual_mutuo_schedule(principal, rates, duration, savings, returns)
-interests = [pay - rem for pay, rem in zip(total_payment, remaining_capital)]
-gain_vs_subito = [principal*1.02 - pay for pay in total_payment]  # esempio semplice
+waits = table["Anno"].values
+costs, interests, gains = [], [], []
+base_cost = total_cost(P, rates[0], years)
 
-df_output = pd.DataFrame({
-    "Anno": np.arange(1,duration+1),
-    "Capitale Residuo (€)": remaining_capital,
-    "Interessi (€)": interests,
-    "Risparmi Accumulati (€)": saved_total,
-    "Pagamento Annuale (€)": total_payment,
-    "Guadagno vs Subito (€)": gain_vs_subito
+for w in waits:
+    saved = savings_accumulated(savings[:w], 0.02)
+    new_P = max(P - saved, 0)
+    cost = total_cost(new_P, rates[w], years)
+    costs.append(cost)
+    interests.append(cost - new_P)
+    gains.append(base_cost - cost)
+
+metrics = pd.DataFrame({
+    "Anni Attesa": waits,
+    "Costo Totale": costs,
+    "Interessi Totali": interests,
+    "Guadagno vs Subito": gains,
+    "Capitale Residuo": [P - s for s in np.cumsum(savings)],
+    "Rata Mensile": [mortgage_payment(max(P - s, 0), r, years) for s, r in zip(np.cumsum(savings), rates)],
+    "Sensibilità Costo": np.gradient(costs),
+    "Sensibilità Interessi": np.gradient(interests),
+    "Costo/Capitale": np.array(costs)/P,
+    "Guadagno Medio Annuo": np.array(gains)/(waits+1e-6)
 })
-st.subheader("Tabella Valori Anno per Anno")
-st.dataframe(df_output)
 
 # ------------------------------
-# Grafici - due schermate 6+6 metriche
+# GRAFICI CON ALTair
 # ------------------------------
-import altair as alt
+st.write("## Metriche Mutuo")
 
-metrics1 = [
-    ("Capitale Residuo (€)", remaining_capital, "Capitale residuo dopo risparmi e pagamenti"),
-    ("Interessi (€)", interests, "Interessi pagati ogni anno"),
-    ("Guadagno vs Subito (€)", gain_vs_subito, "Guadagno netto rispetto pagamento immediato"),
-    ("Risparmi Accumulati (€)", saved_total, "Totale risparmi accumulati anno per anno"),
-    ("Pagamento Annuale (€)", total_payment, "Totale pagamento annuo mutuo")
-]
-
-metrics2 = [
-    ("Tassi (%)", np.array(rates)*100, "Tasso applicato ogni anno"),
-    ("Risparmi (€)", savings, "Risparmi annuali secondo scenario"),
-    ("Rata Mensile (€)", [x/12 for x in total_payment], "Rata mensile del mutuo"),
-    ("Costo/Capitale", [pay/principal for pay in total_payment], "Rapporto costo capitale"),
-    ("Sensibilità Interessi", np.gradient(interests), "Variazione anno per anno degli interessi")
-]
-
-def plot_metrics(metrics, title):
-    st.subheader(title)
-    for name, values, desc in metrics:
-        chart_data = pd.DataFrame({"Anno": np.arange(1,duration+1), name: values})
-        chart = alt.Chart(chart_data).mark_line(point=True).encode(
-            x="Anno",
-            y=name,
-            tooltip=["Anno", name]
-        ).properties(
-            title=f"{name}: {desc}"
-        )
-        st.altair_chart(chart, use_container_width=True)
-
-st.subheader("Grafici Schermata 1")
-plot_metrics(metrics1, "Metriche principali mutuo")
-
-st.subheader("Grafici Schermata 2")
-plot_metrics(metrics2, "Metriche secondarie mutuo")
+for col_name in metrics.columns[1:]:
+    st.write(f"### {col_name}")
+    chart = alt.Chart(metrics).mark_line().encode(
+        x="Anni Attesa",
+        y=col_name
+    ).interactive()
+    st.altair_chart(chart, use_container_width=True)
